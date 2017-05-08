@@ -1,0 +1,598 @@
+---
+title: '[updated]oneday_analysis'
+author: "hayoung"
+date: "December 2, 2016"
+output: html_document
+---
+[Introduction]
+This analysis is done to see the path to purchase, where users visited before and after visiting a brand. 
+The analysis is expanded to see multiple days(11/06 - 11/12) from the one-day analysis of previous version in order to see the consistency in the analyzed pattern. However, it is still for the visit pattern WITHIN a day. Data is from visitation-hourly-summary. 
+
+[Limiataion]
+As proximity mode 2 visits tend to be caught by more than one poi such that some stores shares one visit(with prox 2) and makes it hard to know where uid really visited, I only used proximity mode 1 for this analysis.
+And as visitation summary table stores visit in hourly unit, if a uid visited two stores in an hour, it was not clear which store visit occured first. In that case, I gave an weighted visit for each store. For example, if a uid visited brand 10 in hour 3 and the next visit occured in hour 5 at two brands of 50 and 100, then I counted the visit as 1/2 for brand 10 to brand 50, and 1/2 for brand brand 10 to brand 100. 
+
+The brands analyzed are [Walmart Supercenter, McDonald's, Cvs, Home Depot, Target, Shell, Marriott, Walgreens, American Airlines, Starbucks].
+The analysis consists of four parts :
+#Part1 : Brands Level Analysis - brands where users visited before and after each brand visit.
+#Part2 : Category Level Analysis - categories where users visited before and after each visit in category level.
+#Part3 : Category -> Brand & Brand -> Category Analysis, - categories where users visited before and after each brand visit.
+#Part4 : Top 5 three-consecutive brand visit paths for each top brand
+
+The below table shows the distribution of number of hours uid appeared on 11/11(with prox 1) and about 65% uid appeared on only one hour.
+
+```{r echo = FALSE, message=FALSE, result=FALSE}
+library(pander)
+library(dplyr)
+daysdist <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/days_dist.txt', header=TRUE, sep ='|')
+daysdist$percentage <- paste(daysdist$percentage * 100 ,'%', sep='')
+pandoc.table(daysdist, style = 'grid',caption = "distribution number of hours uid appread")
+```
+## Part1. Brand Level
+
+For selected 10 brands, below graphs show, for visitors of that brand, which other brands they visited before and after that visitation occurred. For example(first graph), within a day, for uids visited Walmart Supercenter(282), 59.61% of them did not appear any time before their visit and 16.36% of them was still visiting the same brand(282) before their visit, and 15.73% of them visited dummy brand(0) some time before their visit and 0.45% of them visited McDonald's some time before they visited Walmart Supercenter. And the next graph shows the same thing for visitation made after the visit for Walmart supercenter. Except for dummy brand visit, same brand visit, first and last visit, the remaining percentage of visiting other brands before and after their visit was not big. The biggest brand-by-brand visit change is found in figure 9(for 4290, American Airlines), such that 3.34% of American Airlines visitors visited JetBlue Airlines before some hour they visited American Airlines. 
+
+```{r echo = FALSE, message=FALSE, result=FALSE, include = FALSE}
+#install.packages("DiagrammeR")
+library("DiagrammeR")
+oneday <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/brandsVisitMat.txt', header = FALSE)
+brandsList <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/brandsList.txt', header = FALSE)
+allBrands <-  read.csv('/Users/hayoungseo/Desktop/others/path_to_purchase/brands_dimension.csv', header =  TRUE, sep =",")
+brandsList <- as.vector(unlist(strsplit(as.character(brandsList$V1), ',')))
+
+oneday <- as.data.frame(oneday) 
+visitMat <- NULL
+
+for (i in 1:dim(oneday)[1]) {
+  bIdx <- unlist(strsplit(unlist(strsplit(as.character(oneday[i,1]), ','))[1],'_'))[2]
+  lst <- as.numeric(unlist(strsplit(as.character(oneday[i,1]), ','))[-1])
+  
+  oneday$bIdx[i] <- bIdx 
+  visitMat <- rbind( visitMat, as.vector(lst))
+  #print(length())
+}
+#visitMat[1,which.max(visitMat[1,])]
+#order(visitMat[1,], decreasing=T)
+
+
+#topVisiLRrandsIdx <- order(colSums(visitMat[c(1:dim(visitMat)[1]-1),]), decreasing = T)[1:12] 
+#topVisiLRrandsIdx <- topVisiLRrandsIdx[topVisiLRrandsIdx!=1 & topVisiLRrandsIdx!=dim(visitMat)[1]]
+##From bid -> to other brands (top 10 for each brands)
+topVisiLRrandsIdx <- c(133, 24, 27, 9, 11, 293, 74, 21, 689, 23) # 3: burgerking
+txtList <- NULL
+for (k in 1:length(topVisiLRrandsIdx)) {
+  n <- topVisiLRrandsIdx[k]
+  curBid <- brandsList[n]
+  print(paste("for brand :" ,curBid, "name :", allBrands[allBrands$footprints_brand_id==curBid,2]))
+  
+  count1 = 1;
+  count2 = 1;
+  txt <- "graph LR"
+  print ("To below brands")
+  txt <- paste(txt, paste("subgraph ", "Brand - From ", allBrands[allBrands$footprints_brand_id==curBid,2], " To Where?", sep=''), sep='\n')
+  for (i in 1:12) {
+    txt <- paste(txt, paste("s(", curBid, " - ", allBrands[allBrands$footprints_brand_id == curBid,2], ")", sep = ''), sep='\n')
+    txt <- paste(txt, " --> ")
+    bIdx <- order(visitMat[n,], decreasing=T)[i]
+    bid =""
+    if (bIdx < length(visitMat[n,])) {
+      bid <- brandsList[bIdx]
+    }
+    else {
+      bid <- "lastVisit"
+    }
+    
+    if (bid != "lastVisit" && bid !=0 && bid!=brandsList[n]) {
+      print(paste(count1, "-th biggest brand To :", bid ,"(", allBrands[allBrands$footprints_brand_id==bid,2],")", " with visit (", visitMat[n,bIdx], ")", " percentage :", visitMat[n,bIdx]/sum(visitMat[n,])))
+      txt <- paste(txt, count1, "(", bid, " - ", allBrands[allBrands$footprints_brand_id == bid, 2], " : " , round(100*visitMat[n, bIdx]/sum(visitMat[n,]), 4), "%)", sep='')
+      #count1 = count1 + 1;
+    }
+    else if (bid == "lastVisit") {
+      print(paste("this is the last Visit - count :",visitMat[n,bIdx], "percentage :", visitMat[n,bIdx]/sum(visitMat[n,])))
+      txt <- paste(txt, count1, "(",bid, " - no more visit after this hour", allBrands[allBrands$footprints_brand_id == bid,2], " : " , round(100*visitMat[n, bIdx]/sum(visitMat[n,]), 4),"%)", sep='')
+    }
+    else if (bid == 0) {
+      print(paste("to dummy brand - count : ", visitMat[n,bIdx], "percentage: ", visitMat[n,bIdx]/sum(visitMat[n,])))
+      txt <- paste(txt, count1, "(",bid, " - to Dummy brand",  " : " , round(100*visitMat[n, bIdx]/sum(visitMat[n,]), 4),"%)", sep='')
+    }
+    else if (bid == brandsList[n]) {
+      print(paste("to same brand visit - count: ", visitMat[bIdx,n], "percentage: ",visitMat[n, bIdx]/sum(visitMat[n,])))
+      txt <- paste(txt, count1, "(",bid, " - same BID : ", round(100*visitMat[n, bIdx]/sum(visitMat[n,]), 4), "%)", sep='')
+    }
+    count1 = count1 + 1;
+  }
+  txt <- paste(txt, "end", sep = '\n')
+  
+  #
+ # txt <- paste(txt, paste("subgraph ", "Brand : ",allBrands[allBrands$footprints_brand_id==curBid,2], sep=''), sep='\n')
+#  txt <- paste(txt, paste("s(",allBrands[allBrands$footprints_brand_id==curBid,2], ")",sep=''), sep='\n')
+ # txt <- paste(txt, "end", sep ='\n')
+  
+  print ("From below brands")
+  txt <- paste(txt, paste("subgraph ", "Brand - From where To ", allBrands[allBrands$footprints_brand_id==curBid,2], "? ", sep=''), sep='\n')
+  for (i in 1:12) {
+    
+    bIdx <- order(visitMat[,n], decreasing=T)[i]
+    bid =""
+    if(bIdx ==length(visitMat[n,])) {
+      bid <-"firstVisit"
+    }
+    else  {
+      bid <- brandsList[bIdx]
+    }
+    if (bid != "lastVisit" && bid !=0 && bid!=brandsList[n] && bid!="firstVisit") {
+      print(paste(count2, "-th biggest brand From: ", bid, "(", allBrands[allBrands$footprints_brand_id==bid,2], ")", " with visit (", visitMat[bIdx,n], ")", "percentage :", visitMat[bIdx,n]/sum(visitMat[,n])));
+      txt <- paste(txt, paste(count1, "(", bid, " - ", allBrands[allBrands$footprints_brand_id == bid,2], " : ", round(100* visitMat[bIdx,n]/sum(visitMat[,n]),4), "%)",sep =''), sep ='\n')
+      #count2 = count2 + 1;
+    }
+    else if (bid == "firstVisit") {
+      print(paste("this is the first Visit - count :",visitMat[bIdx,n], "percentage :", visitMat[bIdx,n]/sum(visitMat[,n])))
+      txt <- paste(txt, paste(count1, "(", bid, " - no visit before this hour: ", round(100* visitMat[bIdx,n]/sum(visitMat[,n]),4), "%)", sep= ''), sep ='\n')
+    }
+    else if (bid == 0) {
+       print(paste("from dummy brand - count : ", visitMat[bIdx,n], "percentage: ", visitMat[bIdx,n]/sum(visitMat[,n])))
+      txt <- paste(txt, paste(count1, "(", bid, " - from Dummy brand: ", round(100* visitMat[bIdx,n]/sum(visitMat[,n]),4), "%)", sep= ''), sep ='\n')
+    } else if (bid == brandsList[n]) {
+      print(paste("from same brand visit - count: ", visitMat[bIdx,n], "percentage: ",visitMat[bIdx,n]/sum(visitMat[,n])))
+      txt <- paste(txt, paste(count1, "(", bid, " - same BID : ", round(100* visitMat[bIdx,n]/sum(visitMat[,n]),4), "%)", sep=''), sep='\n')
+    }
+    txt <- paste(txt, " --> ")
+    txt <- paste(txt, paste("e(", curBid, " - ", allBrands[allBrands$footprints_brand_id == curBid,2], ")", sep = ''), sep='')
+    count2 = count2 + 1;
+    count1 = count1 + 1;
+  }
+  txt <- paste(txt, "end", sep = '\n')
+  txtList[k] <- txt
+}
+```
+
+```{r}
+#figure1. [brand] Walmart Supercenter
+DiagrammeR::mermaid(txtList[1], height =1500)
+#figure2. [brand] McDonald's
+DiagrammeR::mermaid(txtList[2], height =1500)
+#figure3. [brand] Cvs
+DiagrammeR::mermaid(txtList[3], height =1500)
+#figure4. [brand] Home Depot
+DiagrammeR::mermaid(txtList[4], height =1500)
+#figure5. [brand] Target
+DiagrammeR::mermaid(txtList[5], height =1500)
+#figure6. [brand] Shell
+DiagrammeR::mermaid(txtList[6], height =1500)
+#figure7. [brand] Marriott
+DiagrammeR::mermaid(txtList[7], height =1500)
+#figure8. [brand] Walgreens
+DiagrammeR::mermaid(txtList[8], height =1500)
+#figure9. [brand] American Airlines
+DiagrammeR::mermaid(txtList[9], height =1500)
+#figure10. [brand] Starbucks
+DiagrammeR::mermaid(txtList[10], height=1500)
+
+```
+
+## Part2. Category Level
+
+In SIC(Category) level, the percentage became higher than that of brand level. 
+For Hotels&Motels(sic 701101, graph 1), 1.13% of their visitors visited Restaurants(581208) before their visit
+, and also 1.21% of their visitors visited Restaurants after their visit. 
+For Airline Companies(451201) visitors(figure 7), 3.39% of them visited Hotels&Motels(701101) before their visit for Airlines. 
+
+```{r echo = FALSE,  message=FALSE, result=FALSE, include = FALSE}
+########
+##SIC###
+########
+
+sicVisitMat <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/sicsVisitMat.txt', header = FALSE)
+sicsList <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/sicsList.txt', header = FALSE)
+allSics <-  read.csv('/Users/hayoungseo/Desktop/others/path_to_purchase/sic_dimension.csv', header =  TRUE, sep =",")
+sicsList <- as.vector(unlist(strsplit(as.character(sicsList$V1), ',')))
+colnames(allSics) <- c("sic", "desc")
+allSics$desc <-as.character(allSics$desc)
+
+
+for (i in 1:dim(allSics)[1]) {
+  sicDesc <- allSics[i, 2]
+  sicDesc <- gsub("(", "-", sicDesc, fixed="TRUE")
+  sicDesc <- gsub(")", "", sicDesc, fixed ="TRUE")
+  allSics[i, 2] <- sicDesc
+}
+
+sicVisitMat <- as.data.frame(sicVisitMat) 
+tmpVisitMat <- NULL
+
+for (i in 1:dim(sicVisitMat)[1]) {
+  sicIdx <- unlist(strsplit(unlist(strsplit(as.character(sicVisitMat[i,1]), ','))[1],'_'))[2]
+  lst <- as.numeric(unlist(strsplit(as.character(sicVisitMat[i,1]), ','))[-1])
+  
+  sicVisitMat$sicIdx[i] <- sicIdx
+  tmpVisitMat <- rbind( tmpVisitMat, as.vector(lst))
+  #print(length())
+}
+tmpVisitMat[1,which.max(tmpVisitMat[1,])]
+order(tmpVisitMat[1,], decreasing=T)
+sicVisitMat <- tmpVisitMat
+
+
+topVisitSics <- order(colSums(sicVisitMat[c(1:dim(sicVisitMat)[1]-1),]), decreasing = T)[1:11] 
+topVisitSics <- topVisitSics[topVisitSics!=1 & topVisitSics!=dim(sicVisitMat)[1]]
+##From bid -> to other brands (top 10 for each brands)
+txtList <- NULL
+for (k in 1:length(topVisitSics)) {
+  n <- topVisitSics[k]
+  curSic <- sicsList[n]
+  print(paste("for sic :" , curSic, "description :", allSics[allSics$sic==curSic,2]))
+  
+  count1 = 1;
+  count2 = 1;
+  txt <- "graph LR";
+  print ("To below SIC")
+  txt <- paste(txt, paste("subgraph ", "SIC - From", allSics[allSics$sic==curSic,2], " To Where?", sep=''), sep='\n')
+  for (i in 1:12) {
+    txt <- paste(txt, paste("s(", curSic, " - ", allSics[allSics$sic == curSic,2], ")", sep = ''), sep='\n')
+    txt <- paste(txt, " --> ")
+    sicIdx <- order(sicVisitMat[n,], decreasing=T)[i]
+    sic =""
+    if (sicIdx < length(sicVisitMat[n,])) {
+      sic <- sicsList[sicIdx]
+    }
+    else {
+      sic <- "lastVisit"
+    }
+    if (sic != "lastVisit" && sic!=sicsList[n]) {
+      print(paste(count1, "-th biggest sic To :", sic ,"(", allSics[allSics$sic==sic,2],")", " with visit (", sicVisitMat[n,sicIdx], ")", " percentage :", sicVisitMat[n,sicIdx]/sum(sicVisitMat[n,])))
+      txt <- paste(txt, count1, "(",sic, " - ", allSics[allSics$sic == sic,2]," : " , round(100*sicVisitMat[n, sicIdx]/sum(sicVisitMat[n,]), 4), "%)", sep='')
+      #count1 = count1 + 1;
+    }
+    else if (sic == "lastVisit") {
+      print(paste("this is the last Visit - count :",sicVisitMat[n,sicIdx], "percentage :", sicVisitMat[n,sicIdx]/sum(sicVisitMat[n,])))
+      txt <- paste(txt, count1, "(",sic, " - no more visit after this hour", allSics[allSics$sic == sic,2], " : " , round(100*sicVisitMat[n, sicIdx]/sum(sicVisitMat[n,]), 4),"%)", sep='')
+    }
+    else if (sic == sicsList[n]) {
+      print(paste("to same SIC visit - count: ", sicVisitMat[sicIdx,n], "percentage: ",sicVisitMat[n, sicIdx]/sum(sicVisitMat[n,])))
+      txt <- paste(txt, count1, "(",sic, " - same SIC : ", round(100*sicVisitMat[n, sicIdx]/sum(sicVisitMat[n,]), 4), "%)", sep='')
+    }
+    count1 = count1 + 1;
+  }
+  txt <- paste(txt, "end", sep = '\n')
+  #txtList[k] <- txt
+  #DiagrammeR::mermaid(txt, height=500)
+
+  
+  
+  
+  print ("From below SIC")
+  txt <- paste(txt, paste("subgraph ", "SIC - From where To ", allSics[allSics$sic==curSic,2], "? ", sep=''), sep='\n')
+  txt <- paste(txt, '', sep ='\n')
+  for (i in 1:12) {
+    #txt <- paste(txt, paste("s(", curSic, " - ", allSics[allSics$sic == curSic,2], ")", sep = ''), sep='\n')
+    #txt <- paste(txt, " --> ")
+    sicIdx <- order(sicVisitMat[,n], decreasing=T)[i]
+    sic =""
+    if(sicIdx ==length(sicVisitMat[n,])) {
+      sic <-"firstVisit"
+    }
+    else  {
+      sic <- sicsList[sicIdx]
+    }
+    if (sic != "lastVisit" && sic!=sicsList[n] && sic!="firstVisit") {
+      print(paste(count2, "-th biggest brand From: ", sic, "(", allSics[allSics$sic==sic,2], ")", " with visit (", sicVisitMat[sicIdx,n], ")", "percentage :", sicVisitMat[sicIdx,n]/sum(sicVisitMat[,n])));
+      txt <- paste(txt, paste(count1, "(", sic, " - ", allSics[allSics$sic == sic,2], " : ", round(100* sicVisitMat[sicIdx,n]/sum(sicVisitMat[,n]),4), "%)",sep =''), sep ='\n')
+      #count2 = count2 + 1;
+    }
+    else if (sic == "firstVisit") {
+      print(paste("this is the first Visit - count :",sicVisitMat[sicIdx,n], "percentage :", sicVisitMat[sicIdx,n]/sum(sicVisitMat[,n])))
+      txt <- paste(txt, paste(count1, "(", sic, " - no visit before this hour: ", round(100* sicVisitMat[sicIdx,n]/sum(sicVisitMat[,n]),4), "%)", sep= ''), sep ='\n')
+    }
+    else if (sic == sicsList[n]) {
+      print(paste("from same SIC visit - count: ", sicVisitMat[sicIdx,n], "percentage: ",sicVisitMat[sicIdx,n]/sum(sicVisitMat[,n])))
+      txt <- paste(txt, paste(count1, "(", sic, " - same SIC : ", round(100* sicVisitMat[sicIdx,n]/sum(sicVisitMat[,n]),4), "%)", sep=''), sep='\n')
+    }
+    txt <- paste(txt, " --> ")
+    txt <- paste(txt, paste("e( ", curSic, " - ", allSics[allSics$sic == curSic,2], ")", sep = ''), sep='')
+    txt <- paste(txt, '', sep ='\n')
+    count1 = count1 + 1;
+    count2 = count2 + 1;
+  }
+  txt <- paste(txt, "end", sep = '\n')
+  txtList[k] <- txt
+}
+
+```
+
+```{r}
+#figure1. [SIC] Hotels & Motels (701101)
+DiagrammeR::mermaid(txtList[1], height =1500)
+#figure2. [SIC] Restaurants (581208)
+DiagrammeR::mermaid(txtList[2], height =1500)
+#figure3. [SIC] Department Store (531102)
+DiagrammeR::mermaid(txtList[3], height =1500)
+#figure4. [SIC] Grocers-Retail (541105) 
+DiagrammeR::mermaid(txtList[4], height =1500)
+#figure5. [SIC] Pharmacies (591205)
+DiagrammeR::mermaid(txtList[5], height =1500)
+#figure6. [SIC] Service Stations-Gasoline & Oil (554101)
+DiagrammeR::mermaid(txtList[6], height =1500)
+#figure7. [SIC] Airline companies (451201)
+DiagrammeR::mermaid(txtList[7], height =1500)
+#figure8. [SIC] Sports Teams (794108)
+DiagrammeR::mermaid(txtList[8], height =1500)
+#figure9. [SIC] Convenience Stores (541103)
+DiagrammeR::mermaid(txtList[9], height =1500)
+#figure10. [SIC] Home Centers (521138)
+DiagrammeR::mermaid(txtList[10], height=1500)
+
+```
+
+
+## Part3. Category - Brand - Category
+
+For selected 10 brands, below graphs shows top 5 associated categories before and after their brand visit. 
+Here, if the previous/posterior visit was made at the same brand(current visit), then it is excluded from category candidates. For example(figure1), it shows that 42.28% of Walmart Supercenter visitors visited category 'Pharmacies' before they visited Walmart Supercenter and 42.58% of the visitors visited Pharmacies after they visited Walmart Supercenter.
+
+
+```{r echo = FALSE, message=FALSE, result=FALSE, include = FALSE}
+BtoC <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/brandToSicVisitMat.txt', header = FALSE)
+CtoB <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/SicToBrandVisitMat.txt', header = FALSE)
+
+BtoCMat <- NULL
+
+for (i in 1:dim(BtoC)[1]) {
+  bIdx <- unlist(strsplit(unlist(strsplit(as.character(BtoC[i,1]), ','))[1],'_'))[2]
+  lst <- as.numeric(unlist(strsplit(as.character(BtoC[i,1]), ','))[-1])
+  
+  BtoC$bIdx[i] <- bIdx 
+  BtoCMat <- rbind(BtoCMat, as.vector(lst))
+  #print(length())
+}
+
+CtoBMat <- as.data.frame(CtoB) 
+tmpVisitMat <- NULL
+
+for (i in 1:dim(CtoBMat)[1]) {
+  sicIdx <- unlist(strsplit(unlist(strsplit(as.character(CtoBMat[i,1]), ','))[1],'_'))[2]
+  lst <- as.numeric(unlist(strsplit(as.character(CtoBMat[i,1]), ','))[-1])
+  
+  CtoBMat$sicIdx[i] <- sicIdx
+  tmpVisitMat <- rbind( tmpVisitMat, as.vector(lst))
+  #print(length())
+}
+tmpVisitMat[1,which.max(tmpVisitMat[1,])]
+order(tmpVisitMat[1,], decreasing=T)
+CtoBMat <- tmpVisitMat
+
+
+#topVisiLRtoC <- order(rowSums(BtoCMat[c(1:dim(BtoCMat)[1]-1),]), decreasing = T)[1:11]
+#topVisiLRtoC
+
+#allBrands[allBrands$footprints_brand_id == brandsList[topVisiLRrandsIdx[10]],]
+topVisiLRrandsIdx
+txtList <- NULL
+for (k in 1:length(topVisiLRrandsIdx)) {
+  n <- topVisiLRrandsIdx[k]
+  curBid <- brandsList[n]
+  print(paste("for brand :" ,curBid, "name :", allBrands[allBrands$footprints_brand_id==curBid,2]))
+  
+  count1 = 1;
+  count2 = 20;
+  txt <- "graph LR"
+ 
+  print ("To below Categories")
+  txt <- paste(txt, paste("subgraph ", "From ", allBrands[allBrands$footprints_brand_id==curBid,2], " To Top Categories", sep=''), sep='\n')
+  for (i in 1:5) {
+    txt <- paste(txt, paste("0(", curBid, " - ", allBrands[allBrands$footprints_brand_id==curBid,2], ")", sep=''), sep='\n')
+    txt <- paste(txt, " --> ")
+    cIdx <- order(BtoCMat[n,], decreasing = T)[i]
+    sic <- sicsList[cIdx]
+    print (paste(count1, "-th biggest SIC To : ", sic, "(", allSics[allSics$sic==sic,2],")", " with visit (", BtoCMat[n,cIdx], ")", " percentage : ", BtoCMat[n,cIdx]/sum(BtoCMat[n,])))
+    txt <- paste(txt, count1, "(", sic, " - ", allSics[allSics$sic==sic,2], " : " , round(100*BtoCMat[n, cIdx]/sum(BtoCMat[n,]), 4), "%)", sep='')
+    txt <- paste(txt, paste("style ", 0, " fill:#20B2AA,stroke:#333,stroke-width:2px", sep=''), sep='\n')
+    txt <- paste(txt, paste("style ", count1, " fill:#20B2AA,stroke:#333,stroke-width:2px", sep=''), sep='\n')
+    count1 = count1 + 1
+  }
+ 
+  txt <- paste(txt, "end", sep='\n')
+  print ("From below Categories")
+  
+  txt <- paste(txt, paste("subgraph ", "Brand - From which Category To ", allBrands[allBrands$footprints_brand_id==curBid,2], "? ", sep =''), sep = '\n')
+  
+  for (i in 1:5) {
+    
+    cIdx <- order(CtoBMat[,n], decreasing=T)[i]
+    sic = sicsList[cIdx]
+    #print (sic)
+    print(paste(count2, "-th biggest SIC FROM : ", sic, "(", allSics[allSics$sic==sic,2],")", " with visit (", CtoBMat[cIdx,n], ")", " percentage :", CtoBMat[cIdx,n]/sum(CtoBMat[,n])));
+    txt <- paste(txt, paste(count2, "(", sic, " - ",allSics[allSics$sic==sic,2], " : " , round(100*CtoBMat[cIdx, n]/sum(CtoBMat[,n]), 4), "%)", sep=''), sep='\n')
+    txt <- paste(txt, " --> ")
+    txt <- paste(txt, paste("100(", curBid, " - " , allBrands[allBrands$footprints_brand_id == curBid,2], ")", sep = ''), sep='\n')
+    txt <- paste(txt, paste("style ", count2, " fill:#20B2AA,stroke:#333,stroke-width:2px", sep=''), sep='\n')
+    txt <- paste(txt, paste("style ", 100, " fill:#20B2AA,stroke:#333,stroke-width:2px", sep=''), sep='\n')
+    count2 = count2 + 1
+    
+    
+  }
+  txt <- paste(txt, "end", sep='\n')
+  txtList[k] <- txt
+}
+```
+
+
+```{r}
+#figure1. Associated Categories to Walmart Supercenter
+DiagrammeR::mermaid(txtList[1], height=700)
+#figure2. Associated Categories to McDonald's
+DiagrammeR::mermaid(txtList[2], height=700)
+#figure3. Associated Categories to Cvs
+DiagrammeR::mermaid(txtList[3], height=700)
+#figure4. Associated Categories to Home Depot
+DiagrammeR::mermaid(txtList[4], height=700)
+#figure5. Associated Categories to Target
+DiagrammeR::mermaid(txtList[5], height=700)
+#figure6. Associated Categories to Shell
+DiagrammeR::mermaid(txtList[6], height=700)
+#figure7. Associated Categories to Marriot
+DiagrammeR::mermaid(txtList[7], height=700)
+#figure8. Associated Categories to Walgreens
+DiagrammeR::mermaid(txtList[8], height=700)
+#figure9. Associated Categories to American Airlines
+DiagrammeR::mermaid(txtList[9], height=700)
+#figure10. Associated Categories to Starbucks
+DiagrammeR::mermaid(txtList[10], height=700)
+
+```
+
+
+## Part4. Popular three-consecutive brand visits for each brand
+
+For each 10 selected brands, I analyzed consecutive brand visits for each brand including before/after their visit.
+Figure1 shows 5 top popular three-consecutive brand visits for Walmart Supercenter. It tells that the most popular before/after brand visit for Walmart Supercenter was McDonald's -> Walmart Supercenter -> Walmart. However, the number of each observation were so limited as most uid does not appeare many times a day, and many visits occur in dummy brand level(dummy brand visit was excluded for this part).
+
+```{r echo = FALSE, message=FALSE, result=FALSE, include = FALSE}
+Nov6 <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/6/brand/1106.txt', header = FALSE, sep = ',')
+Nov7 <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/7/brand/1107.txt', header = FALSE, sep = ',')
+Nov8 <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/8/brand/1108.txt', header = FALSE, sep = ',')
+Nov9 <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/9/brand/1109.txt', header = FALSE, sep = ',')
+Nov10 <- read.table('/Users/hayoungseo/Desktop/others/path_to_purchase/multipledays/1106_1112/output/10/brand/1110.txt', header = FALSE, sep = ',')
+
+alldate <- NULL
+for (i in 6:10) {
+  dat <- eval(as.name(paste("Nov",i,sep='')))
+  colnames(dat) <- c("brands", "freq")
+  #each date(up to Nov10) has duplicate. correct this
+  dat <- dat %>%
+    group_by(brands) %>%
+    summarise(Value = mean(as.numeric(freq)))
+  
+  alldate <- rbind(alldate,dat)
+}
+
+alldate <- alldate %>%
+    group_by(brands) %>%
+    summarise(Value = sum(as.numeric(Value)))
+
+colnames(alldate) <- c("brands", "freq")
+
+
+for (i in 1: dim(alldate)[1]) {
+  alldate$firstVisit[i] <- unlist(strsplit(as.character(alldate$brands[i]), '_'))[1] 
+  alldate$secondVisit[i] <- unlist(strsplit(as.character(alldate$brands[i]), '_'))[2] 
+  alldate$thirdVisit[i] <- unlist(strsplit(as.character(alldate$brands[i]), '_'))[3] 
+}
+
+# by brand
+topVisiLRrandsIdx <- c(133, 24, 27, 9, 11, 293, 74, 21, 689, 23) # 3: burgerking
+txtList <- NULL
+for (k in 1:length(topVisiLRrandsIdx)) {
+  txt <- "graph LR"
+  n <- topVisiLRrandsIdx[k]
+  curBid <- brandsList[n]
+  brand_name <- allBrands[allBrands$footprints_brand_id==curBid,2]
+  print (paste("brand : ", brand_name, " id : " , curBid))
+
+  alldate_brand <- alldate[alldate$secondVisit == curBid,]
+  filtered_alldate_brand <- alldate_brand[alldate_brand$firstVisit != alldate_brand$thirdVisit & alldate_brand$firstVisit !=0 & alldate_brand$thirdVisit != 0,]
+  print (filtered_alldate_brand[order(filtered_alldate_brand$freq, decreasing = T),][1:10,])
+  #alldate_brand[order(alldate_brand$freq, decreasing = T),][1:40,]
+  count1 = 1
+  count2 = 6
+  count3 = 11
+  for (j in 1:5) {
+    v1 <- filtered_alldate_brand[order(filtered_alldate_brand$freq, decreasing = T),][j,]$firstVisit
+    v1 <- allBrands[allBrands$footprints_brand_id == v1,2]
+    v2 <- brand_name
+    v3 <- filtered_alldate_brand[order(filtered_alldate_brand$freq, decreasing = T),][j,]$thirdVisit
+    v3 <- allBrands[allBrands$footprints_brand_id == v3,2]
+    txt <- paste(txt, paste(count1, "(", v1, ")", " --> ", count2, "(", v2, ")", sep=""), sep ='\n')
+    txt <- paste(txt, paste("style ", count1, " fill:#cef,stroke:#333,stroke-width:2px", sep=''), sep='\n')
+    txt <- paste(txt, paste("style ", count2, " fill:#ccf,stroke:#33f,stroke-width:2px", sep=''), sep='\n')
+    txt <- paste(txt, paste(count2, "(", v2, ")", " --> ", count3, "(", v3, ")", sep=""), sep='\n')
+    txt <- paste(txt, paste("style ", count3, " fill:#cef,stroke:#333,stroke-width:2px", sep=''), sep='\n')
+    count1 = count1 + 1
+    count2 = count2 + 1
+    count3 = count3 + 1
+  }
+  txt <- paste(txt, '\n')
+  txtList[k] <- txt
+}
+```
+
+
+```{r}
+#figure1. Walmart Supercenter
+DiagrammeR::mermaid(txtList[1], height=500)
+#figure2. McDonald's
+DiagrammeR::mermaid(txtList[2], height =500)
+#figure3. Cvs
+DiagrammeR::mermaid(txtList[3], height =500)
+#figure4. Home Depot
+DiagrammeR::mermaid(txtList[4], height =500)
+#figure5. Target
+DiagrammeR::mermaid(txtList[5], height =500)
+#figure6. Shell
+DiagrammeR::mermaid(txtList[6], height =500)
+#figure7. Marriott
+DiagrammeR::mermaid(txtList[7], height =500)
+#figure8. Walgreens
+DiagrammeR::mermaid(txtList[8], height =500)
+#figure9. American Airlines
+DiagrammeR::mermaid(txtList[9], height =500)
+#figure10. Starbucks
+DiagrammeR::mermaid(txtList[10], height =500)
+
+```
+
+```{r echo = FALSE, result = FALSE, include = FALSE}
+
+#paste("graph LR", "A-->B", sep= '\n')
+DiagrammeR::mermaid("
+graph LR
+subgraph one
+1(A) --> 2(B)
+style 1 fill:#20B2AA,stroke:#333,stroke-width:2px
+style 2 fill:#3CB371,stroke:#33f,stroke-width:2px
+B --> C
+A --> D
+end
+subgraph two
+F --> E
+E --> This
+A --> G
+A --> H
+end
+", height = 400)
+DiagrammeR::mermaid("
+graph LR
+subgraph one
+A
+B
+end
+subgraph two
+C
+end
+subgraph three
+D
+E
+end
+D --> C
+C --> A
+C --> B
+E --> C
+", height = 400)
+
+
+#style 1 fill:#fff55d,stroke:#333,stroke-width:2px
+  
+#DiagrammeR::mermaid("
+#graph LR
+#subgraph Home & Centers to Where?
+#s(521138 -  Home Centers)  --> 8(554101 -  Service Stations-Gasoline & Oil :0.0073)
+#s(521138 -  Home Centers)  --> 9(541103 -  Convenience Stores :0.006)
+#end
+#subgraph from where to Home & Centers?
+#1(ewrefawef : ) --> e(521138 -  Home Centers)
+#3(eddsfdsrefawef : ) --> e(521138 -  Home Centers)
+#end
+#")
+#txtList[1]
+```
+
+The limitation for this analysis was that users are mostly seen limited time(82% users seen 1 or 2 time) within a day. And consecutive visits within an hour was not minutely analyzed as the visitation information is stored with hourly-timestamp in visitation table. 
