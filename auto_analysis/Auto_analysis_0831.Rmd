@@ -1,0 +1,404 @@
+---
+title: "Auto_0831"
+author: "hayoung"
+date: "August 31, 2016"
+output: html_document
+---
+```{r pressure, echo=FALSE}
+```
+```{r echo = FALSE}
+multiplot <- function(..., plotlist = NULL, file, cols = 1, layout = NULL) {
+  require(grid)
+
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  if (is.null(layout)) {
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+  if (numPlots == 1) {
+    print(plots[[1]])
+
+  } else {
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    for (i in 1:numPlots) {
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+library(ggplot2)
+library(gridExtra)
+library(grid)
+
+
+grid_arrange_shared_legend <- function(...) {
+    plots <- list(...)
+    g <- ggplotGrob(plots[[1]] + theme(legend.position="bottom"))$grobs
+    legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+    lheight <- sum(legend$height)
+    grid.arrange(
+        do.call(arrangeGrob, lapply(plots, function(x)
+            x + theme(legend.position="none"))),
+        legend,
+        ncol = 1,
+        heights = unit.c(unit(1, "npc") - lheight, lheight))
+}
+
+
+
+g_legend <- function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+
+```
+
+We had 36 auto brands from data source and 35 of them exist in our brand data (except for Ram). But there were two more brands that doesn't have any request information from May to July(maserati and Alfa romeo), so the total number of brands analyzed here is 33.
+
+Firstly, I counted each uid  per day as one visit no matter how many requests the uid have for that day. Last time, I counted each uid one time per hour. As a result, the correlation between monthly visit count and monthly sale is increased to 0.8751 from 0.8585.
+
+
+
+```{r set-options, result = "hide", include=FALSE}
+options(width = 10000, height =50000000)
+library(ggplot2)
+library(reshape2)
+data <- read.table("/Users/hayoungseo/Desktop/others/auto/monthly_sales_src.csv", sep =",", header = TRUE)
+data
+colnames(data) <- c("auto_brand", "brand_id", "may_sale", "may_marketshare", "may_rank", "june_sale", "june_marketshare", 
+                    "june_rank", "july_sale", "july_marketshare", "july_rank", 
+                    "may_request", "june_request", "july_request", "may_visit", "june_visit", "july_visit",
+                    "may_visit_share", "june_visit_share", "july_visit_share",
+                    "may_visit_rank", "june_visit_rank", "july_visit_rank",
+                    "may_weekend_visit", "june_weekend_visit", "july_weekend_visit",
+                    "may_weekend_visit_share", "june_weekend_visit_share", "july_weekend_visit_share")
+
+attach(data)
+#normalize weekend visit data as number of weekend dates are different for each Manth. (May :9, June : 8, July :10)
+data$june_weekend_visit <- data$june_weekend_visit * 9 / 8
+data$july_weekend_visit <- data$july_weekend_visit * 9 / 10
+#data$june_weekend_visit_share <- data$june_weekend_visit / sum(data$june_weekend_visit)
+#data$july_weekend_visit_share <- data$july_weekend_visit / sum(data$july_weekend_visit)
+#correlation btw monthly sales & monthly req
+cor(may_sale, may_request) #0.8618615
+cor(june_sale, june_request) #0.8711809
+cor(july_sale, july_request) #0.85691
+
+#correlation btw monthly sales & monthly visit
+#---------each month has greater correlation than [req] level
+cor(may_sale, may_visit) #0.8826016
+cor(june_sale, june_visit) #0.8913208
+cor(july_sale, july_visit) #0.8726095
+
+#correlation btw monthly market share & monthly visit share
+cor(may_marketshare, may_visit_share) #0.8812636
+cor(june_marketshare, june_visit_share) #0.8900309
+cor(july_marketshare, july_visit_share) #0.8741309
+
+#correlation btw monthly sales & weekend visit
+#-------------Weekend visit shows slightly higher correlation to sales
+cor(may_sale, may_weekend_visit) #0.8835008
+cor(june_sale, june_weekend_visit) #0.9034767
+cor(july_sale, july_weekend_visit) #0.8782551
+
+#Ex1. Acura, Ford : monthly sale & monthly req
+cor(as.numeric(data[data$auto_brand == "Acura",c(3,6,9)]), as.numeric(data[data$auto_brand == "Acura",c(12,13,14)])) #0.7246084
+cor(as.numeric(data[data$auto_brand == "Ford",c(3,6,9)]), as.numeric(data[data$auto_brand == "Ford",c(12,13,14)])) #0.8588833
+#Ex2. Acura, Ford : monthly sale & monthly visit
+cor(as.numeric(data[data$auto_brand == "Acura",c(3,6,9)]), as.numeric(data[data$auto_brand == "Acura",c(15,16,17)])) #0.5259893
+cor(as.numeric(data[data$auto_brand == "Ford",c(3,6,9)]), as.numeric(data[data$auto_brand == "Ford",c(15,16,17)])) #0.7413628
+#Ex3. Acura, Ford : monthly sale & monthly visit share
+cor(as.numeric(data[data$auto_brand == "Acura",c(3,6,9)]), as.numeric(data[data$auto_brand == "Acura",c(18,19,20)])) #0.4486311
+cor(as.numeric(data[data$auto_brand == "Ford",c(3,6,9)]), as.numeric(data[data$auto_brand == "Ford",c(18,19,20)])) #0.755188
+
+#
+all.sale <- as.vector(cbind(as.numeric(may_sale), as.numeric(june_sale), as.numeric(july_sale)))
+all.marketshare <- as.vector(cbind(as.numeric(may_marketshare), as.numeric(june_marketshare), as.numeric(july_marketshare)))
+all.req <- as.vector(cbind(as.numeric(may_request), as.numeric(june_request), as.numeric(july_request)))
+all.visit <- as.vector(cbind(as.numeric(may_visit), as.numeric(june_visit), as.numeric(july_visit)))
+all.visitshare <- as.vector(cbind(as.numeric(may_visit_share), as.numeric(june_visit_share), as.numeric(july_visit_share)))
+all.weekendvisit <- as.vector(cbind(as.numeric(may_weekend_visit), as.numeric(june_weekend_visit), as.numeric(july_weekend_visit)))
+all.weekendvisitshare <- as.vector(cbind(as.numeric(may_weekend_visit_share), as.numeric(june_weekend_visit_share), as.numeric(july_weekend_visit_share)))
+
+cor(all.sale, all.req) #0.8515575
+cor(all.sale, all.visit) #0.8750606
+cor(all.marketshare, all.visit) #0.8743139 bc of rounding?
+cor(all.sale, all.visitshare) #0.8818016
+cor(all.sale, all.weekendvisit) # 0.8797091
+cor(all.sale, all.weekendvisitshare) #0.8871562
+
+
+data2 <- cbind(all.sale, all.marketshare, all.req, all.visit, all.visitshare, all.weekendvisit, all.weekendvisitshare)
+data2 <- as.data.frame(data2)
+brand_name <- rep(data$auto_brand, 3)
+data2$brand_name <- brand_name
+data2$month <- c(rep("May", 33), rep("June", 33), rep("July", 33))
+data2$month <- as.factor(data2$month)
+```
+```{r echo = FALSE}
+#sales vs monthly visit
+ggplot(data = data2, aes(x = all.visit, y = all.sale, colour = brand_name, shape = brand_name, label = brand_name)) + geom_point() + xlab("monthly_visit") + ylab("monthly sales \n (number of cars sold)") + ggtitle("Figure1. Relationship between monthly sales and \n'monthly visitation'  for auto companies ") + scale_shape_manual(values = rep(c(1:11),3))
+```
+
+```{r}
+cor(all.visit, all.sale) #0.8750606
+```
+
+As we have fluctuating number of requests(thus visit) each month, I used visit share(the number of visit for each brand divided by the visit for all the auto companies) as an alternative. So here, I looked at the relationship between monthly visit share and monthly sale for each companies. The correlation of that is higher(0.8818) than the correlation between visit and sale(0.8751). 
+```{r echo = FALSE}
+#sales vs monthly visit share
+ggplot(data = data2, aes(x = all.visitshare, y = all.sale, colour = brand_name, shape = brand_name, label = brand_name)) + geom_point() + xlab("monthly_VisitShare") + ylab("monthly sales \n (number of cars sold)") + ggtitle("Figure2. Relationship between monthly sales and \n'monthly VisitShare' among auto companies ") + scale_shape_manual(values = rep(c(1:11),3))
+```
+```{r}
+cor(all.visitshare, all.sale) #0.8818016
+```
+
+
+
+And I also look at monthly visits only from 'Weekend' as weekend visits are more likely connected to sale while visits on weekdays may be more related to repair or other services. I normalized the weekend visits by the number of weekend dates for each month. 
+So the correlation here is 0.8797, which is slightly higher than that of sales and visits(weekday + weekend) of 0.8751.
+
+```{r echo = FALSE}
+#sales vs weekend visit
+ggplot(data = data2, aes(x = all.weekendvisit, y = all.sale, colour = brand_name, shape = brand_name, label = brand_name)) + geom_point() + xlab("monthly_weekend_visit") + ylab("monthly sales \n (number of cars sold)") + ggtitle("Figure3. Relationship between monthly sales and \n'weekend visitation for auto companies ") + scale_shape_manual(values = rep(c(1:11),3))
+```
+```{r}
+cor(all.weekendvisit, all.sale) # 0.8797091
+```
+
+Now I computed weekend visit's share for each companies, and the relationship between weekend visit share and monthly sale was 0.8872, which is the highest value so far.
+
+```{r echo = FALSE}
+
+#sales vs weekend visit share
+ggplot(data = data2, aes(x = all.weekendvisitshare, y = all.sale, colour = brand_name, shape = brand_name, label = brand_name)) + geom_point() + xlab("monthly_weekend_visit_share") + ylab("monthly sales \n (number of cars sold)") + ggtitle("Figure4. Relationship between monthly sales and \n'weekend VisitShare among auto companies ") + scale_shape_manual(values = rep(c(1:11),3))
+```
+```{r}
+cor(all.weekendvisitshare, all.sale) #0.8871562
+```
+
+
+
+As we saw last time, here is a graph of sales vs. weekend visits for Luxury brands and Non-luxury brands. We can still see different patterns for luxury brands and non-luxury brands. Luxury brands have relatively smaller visits and higher visits for them doesn't necessarily indicate higher sales when compared to non-luxury brands.
+
+Luxury brands here : 
+[ "BMW", "Mercedes", "Lexus", "Audi", "Cadillac", "Acura", "Infiniti", "Lincoln", "Volvo", "Land Rover", "Porsche", "Jaguar", "Maserati", "Bentley", "Buick", "Chrysler"]
+```{r echo = FALSE}
+#Luxury vs NonLuxury
+#Luxury Brands
+luxury_brands <- c("BMW", "Mercedes", "Lexus", "Audi", "Cadillac", "Acura", "Infiniti", "Lincoln", "Volvo", "Land Rover", "Porsche", "Jaguar", "Maserati", "Bentley", "Buick", "Chrysler")
+
+isLux <- c(rep(FALSE, dim(data)[1]))
+for (i in 1:dim(data)[1]){
+    if(data[i,]$auto_brand %in% luxury_brands) {
+      isLux[i] <- TRUE
+  }
+}
+data$isLux <- isLux
+lux.brands <- data[data$isLux == TRUE,]
+non.lux.brands <- data[data$isLux == FALSE,]
+all.isLux <- as.vector(cbind(isLux, isLux, isLux))
+data2$all.isLux <- all.isLux
+
+#
+lux <- data2[data2$brand_name %in% luxury_brands,]
+nonlux <- data2[!data2$brand_name %in% luxury_brands,]
+
+ggplot(data = data2, aes(x = all.weekendvisit, y = all.sale, colour = all.isLux, group = all.isLux, shape = brand_name)) + geom_point(size = 3) + xlab("monthly_weekend_visit") + ylab("monthly sales \n (number of cars sold)") + ggtitle("Figure 5. Relationship between monthly sales and \n'Weekend Visits' among auto companies \n Luxury brands vs. Non-luxury brands") + scale_shape_manual(values = c( letters[1:26], 1,2,3,4,5,6,7))
+
+
+ggplot(data = data2, aes(x = all.weekendvisitshare, y = all.sale, colour = all.isLux, group = all.isLux, shape = brand_name)) + geom_point(size = 3) + xlab("monthly_weekend_visitshare") + ylab("monthly sales \n (number of cars sold)") + ggtitle("Figure 6. Relationship between monthly sales and \n'Weekend VisitShare' among auto companies ") + scale_shape_manual(values = c( letters[1:26], 1,2,3,4,5,6,7))
+```
+
+However, in our data, it doesn't seem that visit share is related to sales as high as we expected.
+Below two graphs show Sales(left) and VisitShare(right) for luxury brands. We can see that signs of changes in visit is not always same as the signs of changes in sales. Here, only cadillac's visitshare shows similar pattern to sales.
+
+```{r echo = FALSE}
+p1 <- ggplot(data = lux, aes(x = factor(month, levels = rev(levels(month))), y = all.sale, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 7 \n Monthly Sales graph \nfor Luxury brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month")
+
+p2 <- ggplot(data = lux, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 8 \n Weekend VisitShare graph \nfor Luxury brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month")
+
+p3 <- ggplot(data = nonlux, aes(x = factor(month, levels = rev(levels(month))), y = all.sale, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 9 \n Monthly sales graph \nfor Non-Luxury brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month")
+p4 <- ggplot(data = nonlux, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 10 \nWeekend VisitShare graph \nfor Non-Luxury brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month")
+
+#multiplot(p1,p2, cols = 2)
+#multiplot(p3,p4, cols = 2)
+
+#legend1
+p1.leg <- ggplot(data = lux, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 8 \n Weekend VisitShare graph \nfor Luxury brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="right")+ xlab("month")
+leg1 <- g_legend(p1.leg)
+#legend2
+p2.leg <- ggplot(data = nonlux, aes(x = factor(month, levels = rev(levels(month))), y = all.sale, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Monthly sales graph \nfor Non-Luxury brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="right")+ xlab("month")
+leg2 <- g_legend(p2.leg)
+
+
+#part1
+grid.arrange(arrangeGrob(p1,p2, leg1, ncol = 3, widths = c(4/7,3.5/7, 3/7)))
+```
+
+For non-luxury brands below, Chevrolet, Honda, Jeep and Mazda shows similar patterns in sales and visits. 
+
+```{r echo = FALSE}
+grid.arrange(arrangeGrob(p3,p4, leg2, ncol = 3, widths = c(4/7,3.5/7, 3/7)))
+```
+
+
+And I wondered if there is any distinction between big sales brand and low sales brand as guessed big sales brands might have higher visits and thus stable patterns. 
+Below six graphs are for higher sales brands and they are for monthly sales, monthly visits, monthly visitshares, (monthly sales again for better comparison horizantally), weekend visits, and weekend visitshares, respectively. 
+I can see that visitshare(fig13) shows more similar pattern to monthly sale(fig11) than just visit(fig12) for Chevrolet, Honda and Toyota. Weekend-visitShare(fig15) also improves weekend-visit(fig14), especially for Chevrolet, Jeep, and Nissan.
+
+```{r echo = FALSE}
+attach(data2)
+top.sales.brand <- data[data$june_sale > 30000,]$auto_brand
+part1 <- data2[data2$brand_name %in% top.sales.brand,]
+part2 <- data2[!data2$brand_name %in% top.sales.brand,]
+#monthly sales graph for part1
+p1 <- ggplot(data = part1, aes(x = factor(month, levels = rev(levels(month))), y = all.sale, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 11\n Monthly Sales for \n higher sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("sales")
+#monthly_sales graph for part2
+p2 <- ggplot(data = part2 , aes(x = factor(month, levels = rev(levels(month))), y = all.sale, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line(aes(linetype = brand_name)) + geom_point(size = 1) + ggtitle("Figure 16\n Monthly Sales for\n lower sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + scale_linetype_manual(values = rep(c("twodash", "solid", "longdash"),7)) + theme(legend.position="none")+ xlab("month") + ylab("sales")
+
+#monthly visit graph for part1
+p3 <- ggplot(data = part1, aes(x = factor(month, levels = rev(levels(month))), y = all.visit, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 12\n Monthly Visits for \n higher sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("visits")
+p4 <- ggplot(data = part2, aes(x = factor(month, levels = rev(levels(month))), y = all.visit, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line(aes(linetype = brand_name)) + geom_point(size = 1.5) + ggtitle("Figure 17\n Monthly Visits for \n lower sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none") + scale_linetype_manual(values = rep(c("twodash", "solid", "longdash"),7)) + xlab("month") + ylab("visits")
+
+#monthly visit_share graph for part1
+p5 <- ggplot(data = part1, aes(x = factor(month, levels = rev(levels(month))), y = all.visitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 13\n Monthly VisitShare for\n higher sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("visit share")
+p6 <- ggplot(data = part2, aes(x = factor(month, levels = rev(levels(month))), y = all.visitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line(aes(linetype = brand_name)) + geom_point(size = 1.5) + ggtitle("Figure 18\n Monthly VisitShare for \n lower sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none") + scale_linetype_manual(values = rep(c("twodash", "solid", "longdash"),7)) + theme(legend.position="none") + xlab("month") + ylab("visit")
+
+#weekend visits for part1
+p7 <- ggplot(data = part1, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisit, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 14\nWeekend Visits for \n higher sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("weekend visits")
+
+#weekend visitshare for part1
+p8 <- ggplot(data = part1, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Figure 15\nWeekend VisitShare for \n higher sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("weekend visits share")
+
+#weekend visits for part2
+p9 <- ggplot(data = part2, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisit, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line(aes(linetype = brand_name)) + geom_point(size = 1.5) + ggtitle("Figure 19\nWeekend Visits for \n higher sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("weekend visits")+ scale_linetype_manual(values = rep(c("twodash", "solid", "longdash"),7))
+
+#weekend visits for part2
+p10 <- ggplot(data = part2, aes(x = factor(month, levels = rev(levels(month))), y = all.weekendvisitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line(aes(linetype = brand_name)) + geom_point(size = 1.5) + ggtitle("Figure 20\nWeekend Visits for \n lower sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + theme(legend.position="none")+ xlab("month") + ylab("weekend visits share")+ scale_linetype_manual(values = rep(c("twodash", "solid", "longdash"),7))
+
+#grid_arrange_shared_legend(p1, p3, p5, ncol=4)
+#multiplot(p1, p3, p5, cols = 3)
+#multiplot(p2,p4,p6, cols = 3)
+p5.leg <- ggplot(data = part1, aes(x = factor(month, levels = rev(levels(month))), y = all.visitshare, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line() + geom_point(size = 1.5) + ggtitle("Monthly Sales graph for lower sales brand")+ scale_shape_manual(values = rep(c(1:12),3))
+leg1<-g_legend(p5.leg)
+
+p4.leg <- ggplot(data = part2, aes(x = factor(month, levels = rev(levels(month))), y = all.visit, group = brand_name, colour = brand_name, shape = brand_name)) + geom_line(aes(linetype = brand_name)) + geom_point(size = 1.5) + ggtitle("Monthly Sales graph for lower sales brand")+ scale_shape_manual(values = rep(c(1:12),3)) + scale_linetype_manual(values = rep(c("twodash", "solid", "longdash"),7))
+leg2 <- g_legend(p4.leg)
+
+#part1
+grid.arrange(arrangeGrob(p1,p3,p5, leg1, ncol = 4, widths = c(4.5/7,4.5/7,4/7,2/7)))
+
+grid.arrange(arrangeGrob(p1,p7,p8, leg1, ncol = 4, widths = c(4.5/7,4.5/7,4/7,2/7)))
+```
+
+
+
+
+For lower sales brands, Mazda and Cadillac showed more similar pattern to sales after converting to weekend-visitshare. 
+
+
+```{r echo = FALSE}
+#part2
+grid.arrange(arrangeGrob(p2,p4,p6, leg2, ncol = 4, widths = c(4.5/7,4.5/7,4/7,4/7)))
+grid.arrange(arrangeGrob(p2,p9,p10, leg2, ncol = 4, widths = c(4.5/7,4.5/7,4/7,4/7)))
+
+```
+
+
+Below, I attached all the brands' sales, visitshare, weekendvisitshare graphs for better looking. We can double check that weekend-visitshare can be a good representative of sales for Cadillac, Chevrolet, Jeep, Nissan, and Mazda.
+```{r echo = FALSE}
+
+#par(mfrow = c(3,11))
+p <- list()
+for(i in 1:length(data$auto_brand)) {
+  brand <- data$auto_brand[i]
+  sales <- data[data$auto_brand == brand, c(3,6,9)]
+  req <- data[data$auto_brand == brand, c(12,13,14)]
+  visit <- data[data$auto_brand == brand, c(15,16,17)]
+  visitshare <- data[data$auto_brand == brand, c(18,19,20)]
+  salesrank <- data[data$auto_brand == brand, c(5,8,11)]
+  visitrank <- data[data$auto_brand == brand, c(21,22,23)]
+  weekendvisit <- data[data$auto_brand == brand, c(24,25,26)]
+  weekendvisitshare <- data[data$auto_brand == brand, c(27,28,29)]
+  tmp <- cbind(as.numeric(sales), as.numeric(visit), as.numeric(visitshare), 
+               as.numeric(salesrank), as.numeric(visitrank), as.numeric(weekendvisit), 
+               as.numeric(weekendvisitshare))
+  tmp <- as.data.frame(tmp)
+  colnames(tmp) <- c("sales", "visit", "visitshare", "salesrank", "visitrank", "weekendvisit", "weekendvisitshare")
+  tmp$month <- c("5", "6", "7")
+  tmp$month <- as.numeric(tmp$month)
+  tmp <- melt(tmp, id = "month")
+  pi <- ggplot(data = tmp, aes(x = month, y = value, colour = variable)) + geom_line() + geom_point(size = 1.5) +
+    ggtitle(brand) + theme(legend.position="right")+ xlab("month")
+  p[[i]] <- pi
+}
+layout <- matrix(c(1:33), nrow = 3, byrow = TRUE)
+#multiplot(plotlist = p, layout = layout)
+
+
+#all brand plot for Market Share and Weekend Visit Share
+p <- list()
+for(i in 1:length(data$auto_brand)) {
+  brand <- data$auto_brand[i]
+  marketshare <- data[data$auto_brand == brand, c(4,7,10)]
+  visitshare <- data[data$auto_brand == brand, c(18,19,20)]
+  weekendvisitshare <- data[data$auto_brand == brand, c(27,28,29)]
+  tmp <- cbind(as.numeric(marketshare), as.numeric(visitshare), as.numeric(weekendvisitshare))
+  tmp <- as.data.frame(tmp)
+  colnames(tmp) <- c("marketshare", "visitshare", "weekendvisitshare")
+  tmp$month <- c("5", "6", "7")
+  tmp$month <- as.numeric(tmp$month)
+  tmp <- melt(tmp, id = "month")
+  pi <- ggplot(data = tmp, aes(x = month, y = value, colour = variable)) + geom_line() + geom_point(size = 1.5) +
+    ggtitle(brand) + theme(legend.position="bottom")+ xlab("month")
+  p[[i]] <- pi
+}
+#multiplot(p[[1]], p[[2]], p[[3]], cols = 3) 
+#multiplot(p[[4]], p[[5]], p[[6]], cols = 3)
+grid_arrange_shared_legend(p[[1]], p[[2]], p[[3]], p[[4]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[5]], p[[6]], p[[7]], p[[8]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[9]], p[[10]], p[[11]], p[[12]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[13]], p[[14]], p[[15]], p[[16]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[17]], p[[18]], p[[19]], p[[20]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[21]], p[[22]], p[[23]], p[[24]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[25]], p[[26]], p[[27]], p[[28]], nrow = 2, ncol = 2)
+grid_arrange_shared_legend(p[[29]], p[[30]], p[[31]], p[[32]], p[[33]], nrow = 2, ncol = 2)
+
+
+```
+
+```{r echo = FALSE}
+
+
+
+```
+```{r echo = FALSE}
+library(ggplot2)
+#increase/decrease
+table <- read.csv("/Users/hayoungseo/Desktop/others/auto/change_sign.csv", header = TRUE)
+salesdata <- data.frame(cbind(table$Automaker, table$Sale_May_to_June, table$Sale_June_to_July))
+#1:- 2: +
+colnames(salesdata) <- c("brand_name", "sales_may_to_june", "sales_june_to_july")
+salesdata <- melt(salesdata, id = "brand_name")
+salesdata$brand_name <- table$Automaker
+#ggplot(salesdata, aes(x = variable, y = brand_name, colour = factor(value))) + geom_tile(aes(colors = value, fill = c("red", "blue"), width = 5)) 
+#+ scale_colour_manual(values = c("red", "blue"))
+
+
+
+```
+
+
+Conclusion : I could find weekend-visit-share shows higher correlation to sale for some auto companies, especially Chevrolet and Mazda. I expected visit-share or weekend-visit-share would show much higher relationship to sales than this result, but many of brands still show different patterns between their visit-share and sales. It indicates not only the total number of request fluctuates, but also the composition of our requests fluctuates. Or there may be some unreliable source in the auto data sales. We need to further look at the data for longer periods.
